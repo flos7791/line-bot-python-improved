@@ -34,6 +34,8 @@ pip install -r requirements.txt
 LINE_CHANNEL_SECRET=你的_Channel_Secret
 LINE_CHANNEL_ACCESS_TOKEN=你的_Channel_Access_Token
 GEMINI_API_KEY=你的_Gemini_API_Key
+# 啟用 Google 搜尋查證；設定 false 可關閉
+GEMINI_GOOGLE_SEARCH=true
 # 可選：指定 Gemini 模型；未設定時使用程式預設值
 GEMINI_MODEL=gemini-flash-lite-latest
 # 僅本機除錯時設定為 true；正式環境請保持 false
@@ -65,3 +67,5 @@ ngrok http 5000
 - `/help`：查看指令清單。
 
 其他訊息仍會交給 AI 一般聊天。
+
+一般聊天與「解」「考」指令會使用 Gemini Google Search grounding，並在有搜尋來源時附上來源連結；「翻」「改」不會搜尋。搜尋可以降低模型憑記憶猜答案的機率，但不是零錯誤保證；重要資訊仍應開啟來源確認。Grounding 會依 Google Gemini API 的用量與計費規則計費；設 `GEMINI_GOOGLE_SEARCH=false` 可停用。

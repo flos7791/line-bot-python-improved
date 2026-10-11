@@ -43,7 +43,7 @@ if not CHANNEL_SECRET or not CHANNEL_ACCESS_TOKEN:
 configuration = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(CHANNEL_SECRET)
 
-def get_ai_response(prompt: str) -> str:
+def get_ai_response(prompt: str, use_search: bool = True) -> str:
     gemini_key = os.getenv("GEMINI_API_KEY")
     if not gemini_key or gemini_key.strip() == "" or gemini_key == "your_gemini_api_key_here":
         return "⚠️ 尚未在 .env 中填寫 GEMINI_API_KEY！\n請前往 https://aistudio.google.com/app/apikey 免費申請金鑰。"
@@ -79,7 +79,9 @@ def get_ai_response(prompt: str) -> str:
         except Exception as e:
             app.logger.warning(f"讀取 knowledge_base.txt 失敗: {e}")
 
-    kb_instruction = f"\n【精確事實知識庫（請優先以此內容為準，具最高優先級）】：\n{kb_content}\n" if kb_content else ""
+    kb_instruction = f"\n【專屬背景資料（可能未更新；涉及可搜尋的事實時，請用可靠網路來源重新查證，不可盲目視為最新）】：\n{kb_content}\n" if kb_content else ""
+
+    search_enabled = use_search and os.getenv("GEMINI_GOOGLE_SEARCH", "true").strip().lower() in {"1", "true", "yes", "on"}
 
     for model_name in models_to_try:
         try:
@@ -87,21 +89,37 @@ def get_ai_response(prompt: str) -> str:
                 model=model_name,
                 contents=prompt,
                 config=types.GenerateContentConfig(
+                    tools=[types.Tool(google_search=types.GoogleSearch())] if search_enabled else None,
                     system_instruction=(
                         f"你是一個友善、聰明且樂於助人的 LINE 繁體中文 AI 智慧助理。今天的日期是 {today_str}。\n"
                         f"{kb_instruction}\n"
                         "【核心守則】：\n"
                         "1. 嚴格防範幻覺（No Hallucination）：面對特定個人（如特定學校的某位老師/教授、公司主管）、生僻專有名詞或歷史細節，如果你的資料庫沒有百分之百確切把握，絕不可自行拼湊、嫁接同名人物或虛構其職稱、系所與經歷！\n"
-                        "2. 優先參照知識庫：若使用者詢問上述知識庫中已記載的人事物，請務必按照知識庫提供準確資訊。\n"
-                        "3. 誠實求真：如果無法確定該人物是否屬於該學校/單位，請誠實說明「資料庫缺乏確切記載」，並引導使用者提供更多線索（例如所屬系所或研究領域），或給出官方查詢管道。\n"
-                        "4. 即時資訊：若使用者詢問強烈依賴當天即時資訊的事物（如今日院線電影、今日天氣、股市現價），誠實說明並給出查詢建議。"
+                        "2. 專屬知識庫是背景參考，不保證最新；可搜尋的事實要查證。若資料庫與可信的官方或近期來源衝突，指出資料庫可能過時並以查證結果回答。\n"
+                        "3. 誠實求真：如果搜尋後仍無法確認人物、職稱或經歷，明確說明不確定，不可拼湊同名人物資訊。\n"
+                        "4. 網路查證：需要可搜尋的事實、冷門資訊、人物資料或最新資訊時，使用 Google Search 查證；優先採用官方或原始來源，來源互相矛盾時要說明，不要把推測寫成事實。\n"
+                        "5. 即時資訊：需要即時資料時，必須以搜尋結果為準；若搜尋沒有找到可靠來源，明確說無法確認。"
                     )
                 )
             )
             if response.text and response.text.strip():
                 actual_version = getattr(response, 'model_version', model_name)
                 print(f"[AI 模型呼叫成功] 模型名稱: {model_name}, 實際版本: {actual_version}")
-                return response.text.strip()
+                answer = response.text.strip()
+                sources = []
+                for candidate in getattr(response, "candidates", None) or []:
+                    metadata = getattr(candidate, "grounding_metadata", None)
+                    for chunk in getattr(metadata, "grounding_chunks", None) or []:
+                        web_source = getattr(chunk, "web", None)
+                        url = getattr(web_source, "uri", None)
+                        title = getattr(web_source, "title", None) or url
+                        if url and all(existing_url != url for _, existing_url in sources):
+                            sources.append((title, url))
+                if sources:
+                    answer += "\n\n📚 參考來源\n" + "\n".join(
+                        f"• {title}: {url}" for title, url in sources[:5]
+                    )
+                return answer
         except Exception as e:
             # Avoid logging provider exception details: they can include request data.
             app.logger.warning("Gemini model %s failed (%s); trying fallback.", model_name, type(e).__name__)
@@ -122,11 +140,11 @@ COMMAND_HELP = (
 )
 
 
-def prepare_message(user_text: str) -> tuple[str, str | None]:
-    """Return the Gemini prompt and an optional direct reply."""
+def prepare_message(user_text: str) -> tuple[str, str | None, bool]:
+    """Return the Gemini prompt, optional direct reply, and search preference."""
     text = user_text.strip()
     if text.lower() in {"/help", "help", "幫助", "指令", "功能"}:
-        return "", COMMAND_HELP
+        return "", COMMAND_HELP, False
 
     parts = text.split(maxsplit=1)
     command = parts[0].lower() if parts else ""
@@ -143,7 +161,7 @@ def prepare_message(user_text: str) -> tuple[str, str | None]:
         action = "translate"
         argument = f"{target_languages[command]} {argument}".strip()
     if not action:
-        return user_text, None
+        return user_text, None, True
     if not argument:
         usage = {
             "translate": "用法：翻 <文字>（例如：翻 Good morning）",
@@ -151,7 +169,7 @@ def prepare_message(user_text: str) -> tuple[str, str | None]:
             "explain": "用法：解 <主題>（例如：解 什麼是黑洞）",
             "quiz": "用法：考 <主題>（例如：考 台灣地理）",
         }
-        return "", usage[action]
+        return "", usage[action], False
 
     instructions = {
         "translate": "請翻譯以下文字。若文字以「英文」「日文」「韓文」等語言名稱開頭，翻譯成該語言；否則翻譯成自然的繁體中文。只給翻譯結果。\n\n",
@@ -159,7 +177,7 @@ def prepare_message(user_text: str) -> tuple[str, str | None]:
         "explain": "請用繁體中文白話解釋以下主題，控制在容易閱讀的長度，並附上一個具體例子。\n\n",
         "quiz": "請針對以下主題出一道簡短小測驗。先只給題目，不要公布答案，等使用者回答後再判斷並解釋。\n\n",
     }
-    return instructions[action] + argument, None
+    return instructions[action] + argument, None, action in {"explain", "quiz"}
 
 @app.route("/", methods=['GET'])
 def home():
@@ -191,8 +209,8 @@ def handle_message(event):
     user_text = event.message.text
     app.logger.info("Received text message event.")
 
-    prompt, direct_reply = prepare_message(user_text)
-    ai_reply = direct_reply if direct_reply is not None else get_ai_response(prompt)
+    prompt, direct_reply, use_search = prepare_message(user_text)
+    ai_reply = direct_reply if direct_reply is not None else get_ai_response(prompt, use_search=use_search)
     try:
         with ApiClient(configuration) as api_client:
             line_bot_api = MessagingApi(api_client)
