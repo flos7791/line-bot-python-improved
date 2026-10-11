@@ -1,0 +1,31 @@
+name: Publish project website
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    steps:
+      - name: Upload website files
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: docs
+      - name: Publish to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

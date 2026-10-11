@@ -69,3 +69,7 @@ ngrok http 5000
 其他訊息仍會交給 AI 一般聊天。
 
 一般聊天與「解」「考」指令會使用 Gemini Google Search grounding，並在有搜尋來源時附上來源連結；「翻」「改」不會搜尋。搜尋可以降低模型憑記憶猜答案的機率，但不是零錯誤保證；重要資訊仍應開啟來源確認。Grounding 會依 Google Gemini API 的用量與計費規則計費；設 `GEMINI_GOOGLE_SEARCH=false` 可停用。
+
+## 專案成果網站
+
+開發紀錄網站位於 [`docs/index.html`](docs/index.html)，包含功能介紹、快速指令、開發紀錄與實測狀態。網站中的「已確認／待測」依目前留存的 LINE 實測證據標示；其餘情境需在 LINE 上實際操作並補上結果。
