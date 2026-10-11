@@ -143,13 +143,20 @@ COMMAND_HELP = (
 def prepare_message(user_text: str) -> tuple[str, str | None, bool]:
     """Return the Gemini prompt, optional direct reply, and search preference."""
     text = user_text.strip()
-    normalized_text = text.strip("\"'`“”‘’ ").lower()
+    normalized_text = text.translate(str.maketrans({"／": "/", "？": "?", "！": "!"}))
+    normalized_text = normalized_text.strip("\"'`“”‘’!?！？。，.,:：;； ").casefold()
     help_phrases = {
         "/help", "help", "指令", "幫助", "功能", "可用指令", "有哪些指令",
         "我可以用哪些指令", "你有哪些功能", "你能做什麼", "功能列表",
         "commands", "command list", "what can you do", "what commands can i use",
     }
-    if normalized_text in help_phrases:
+    if (
+        normalized_text in help_phrases
+        or "/help" in normalized_text
+        or "指令" in normalized_text
+        or "command" in normalized_text
+        or "commands" in normalized_text
+    ):
         return "", COMMAND_HELP, False
 
     parts = text.split(maxsplit=1)
