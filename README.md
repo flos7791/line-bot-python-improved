@@ -34,6 +34,10 @@ pip install -r requirements.txt
 LINE_CHANNEL_SECRET=你的_Channel_Secret
 LINE_CHANNEL_ACCESS_TOKEN=你的_Channel_Access_Token
 GEMINI_API_KEY=你的_Gemini_API_Key
+# 可選：指定 Gemini 模型；未設定時使用程式預設值
+GEMINI_MODEL=gemini-flash-lite-latest
+# 僅本機除錯時設定為 true；正式環境請保持 false
+FLASK_DEBUG=false
 ```
 *(可至 [Google AI Studio](https://aistudio.google.com/app/apikey) 免費取得 API 金鑰)*
 
@@ -41,7 +45,7 @@ GEMINI_API_KEY=你的_Gemini_API_Key
 ```bash
 python app.py
 ```
-伺服器將在 `http://127.0.0.1:5000` 運行。
+伺服器將在 `http://127.0.0.1:5000` 運行。正式部署請使用支援 WSGI 的伺服器，並將 `FLASK_DEBUG` 保持為 `false`。
 
 
 ### 4. 透過 ngrok 映射 Webhook

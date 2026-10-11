@@ -31,6 +31,7 @@ from google.genai import types
 load_dotenv()
 
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024
 
 CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET')
 CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
@@ -47,13 +48,10 @@ def get_ai_response(prompt: str) -> str:
     if not gemini_key or gemini_key.strip() == "" or gemini_key == "your_gemini_api_key_here":
         return "⚠️ 尚未在 .env 中填寫 GEMINI_API_KEY！\n請前往 https://aistudio.google.com/app/apikey 免費申請金鑰。"
 
-    # 候選模型備援清單（優先使用超高速的 flash-lite，並自動容錯降級）
-    candidate_models = [
-        os.getenv("GEMINI_MODEL", "gemini-flash-lite-latest"),
-        "gemini-3.5-flash",
-        "gemini-3.8-flash"
-    ]
-    models_to_try = list(dict.fromkeys(candidate_models))
+    # 優先使用自訂模型；失敗時退回預設的 Flash Lite 模型。
+    configured_model = os.getenv("GEMINI_MODEL", "gemini-flash-lite-latest").strip()
+    candidate_models = [configured_model, "gemini-flash-lite-latest"]
+    models_to_try = list(dict.fromkeys(model for model in candidate_models if model))
 
     # 快捷指令：使用者輸入 /model 或問正在使用的模型
     clean_prompt = prompt.strip().lower()
@@ -62,9 +60,8 @@ def get_ai_response(prompt: str) -> str:
         return (
             f"🤖 【目前 AI 模型資訊】\n"
             f"• 預設模型：{current_cfg}\n"
-            f"• 備援模型庫：{', '.join(models_to_try)}\n"
-            f"• 底層版本：Gemini 3.5 Flash Lite / Flash 系列\n"
-            f"• 支援即時自動備援切換"
+            f"• 備援模型：{', '.join(models_to_try[1:]) or '無（目前使用預設模型）'}\n"
+            f"• 支援自動切換備援模型"
         )
 
     client = genai.Client(api_key=gemini_key)
@@ -106,11 +103,12 @@ def get_ai_response(prompt: str) -> str:
                 print(f"[AI 模型呼叫成功] 模型名稱: {model_name}, 實際版本: {actual_version}")
                 return response.text.strip()
         except Exception as e:
-            app.logger.warning(f"模型 {model_name} 暫時無法使用 ({e})，正在嘗試下一個備援模型...")
-            last_error = e
+            # Avoid logging provider exception details: they can include request data.
+            app.logger.warning("Gemini model %s failed (%s); trying fallback.", model_name, type(e).__name__)
+            last_error = type(e).__name__
 
     app.logger.error(f"所有 Gemini 模型呼叫均失敗: {last_error}")
-    return f"AI 服務暫時忙碌中，請稍後再試（{last_error}）"
+    return "AI 服務目前暫時無法回覆，請稍後再試。"
 
 @app.route("/", methods=['GET'])
 def home():
@@ -126,7 +124,7 @@ def callback():
 
     body = request.get_data(as_text=True)
 
-    app.logger.info("Request body: " + body)
+    # Do not log webhook payloads; they contain users' private messages.
 
     try:
         handler.handle(body, signature)
@@ -140,23 +138,24 @@ def callback():
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     user_text = event.message.text
-    print(f"收到使用者訊息: {user_text}")
+    app.logger.info("Received text message event.")
 
     # 取得 AI 智慧回覆
     ai_reply = get_ai_response(user_text)
-    print(f"AI 回覆內容: {ai_reply}")
-
-    with ApiClient(configuration) as api_client:
-        line_bot_api = MessagingApi(api_client)
-        line_bot_api.reply_message_with_http_info(
-            ReplyMessageRequest(
-                reply_token=event.reply_token,
-                messages=[TextMessage(text=ai_reply)]
+    try:
+        with ApiClient(configuration) as api_client:
+            line_bot_api = MessagingApi(api_client)
+            line_bot_api.reply_message_with_http_info(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=ai_reply[:5000])]
+                )
             )
-        )
+    except Exception as e:
+        app.logger.error("Failed to send LINE reply (%s).", type(e).__name__)
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
     print(f"本地伺服器啟動於 http://127.0.0.1:{port}")
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="0.0.0.0", port=port, debug=os.getenv("FLASK_DEBUG", "false").lower() == "true")
 
