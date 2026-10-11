@@ -32,6 +32,7 @@ load_dotenv()
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 1024 * 1024
+app.logger.setLevel("INFO")
 
 CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET')
 CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
@@ -225,6 +226,8 @@ def handle_message(event):
     app.logger.info("Received text message event.")
 
     prompt, direct_reply, use_search = prepare_message(user_text)
+    if direct_reply == COMMAND_HELP:
+        app.logger.info("Help list selected for text message.")
     ai_reply = direct_reply if direct_reply is not None else get_ai_response(prompt, use_search=use_search)
     try:
         with ApiClient(configuration) as api_client:
