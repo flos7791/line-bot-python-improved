@@ -110,6 +110,53 @@ def get_ai_response(prompt: str) -> str:
     app.logger.error(f"所有 Gemini 模型呼叫均失敗: {last_error}")
     return "AI 服務目前暫時無法回覆，請稍後再試。"
 
+
+COMMAND_HELP = (
+    "💡 快速指令\n"
+    "翻 <文字>：翻譯成繁體中文；也可用「翻英文 <文字>」指定目標語言\n"
+    "改 <文字>：修正文法並讓表達更自然\n"
+    "解 <主題>：用白話說明並舉一個例子\n"
+    "考 <主題>：出一題小測驗，先不要公布答案\n"
+    "/help：顯示這份指令清單\n\n"
+    "直接傳送其他訊息，仍可和我一般聊天。"
+)
+
+
+def prepare_message(user_text: str) -> tuple[str, str | None]:
+    """Return the Gemini prompt and an optional direct reply."""
+    text = user_text.strip()
+    if text.lower() in {"/help", "help", "幫助", "指令", "功能"}:
+        return "", COMMAND_HELP
+
+    parts = text.split(maxsplit=1)
+    command = parts[0].lower() if parts else ""
+    argument = parts[1].strip() if len(parts) > 1 else ""
+    commands = {
+        "翻": "translate", "翻譯": "translate",
+        "改": "polish", "潤飾": "polish", "修改": "polish",
+        "解": "explain", "解釋": "explain",
+        "考": "quiz", "出題": "quiz", "小測驗": "quiz",
+    }
+    action = commands.get(command)
+    if not action:
+        return user_text, None
+    if not argument:
+        usage = {
+            "translate": "用法：翻 <文字>（例如：翻 Good morning）",
+            "polish": "用法：改 <文字>（例如：改 我昨天有去看電影了）",
+            "explain": "用法：解 <主題>（例如：解 什麼是黑洞）",
+            "quiz": "用法：考 <主題>（例如：考 台灣地理）",
+        }
+        return "", usage[action]
+
+    instructions = {
+        "translate": "請翻譯以下文字。若文字以「英文」「日文」「韓文」等語言名稱開頭，翻譯成該語言；否則翻譯成自然的繁體中文。只給翻譯結果。\n\n",
+        "polish": "請修正文法、錯字並讓以下文字更自然清楚，保留原意與語氣。只輸出修改後文字。\n\n",
+        "explain": "請用繁體中文白話解釋以下主題，控制在容易閱讀的長度，並附上一個具體例子。\n\n",
+        "quiz": "請針對以下主題出一道簡短小測驗。先只給題目，不要公布答案，等使用者回答後再判斷並解釋。\n\n",
+    }
+    return instructions[action] + argument, None
+
 @app.route("/", methods=['GET'])
 def home():
     return "LINE Bot 伺服器運作中！"
@@ -140,8 +187,8 @@ def handle_message(event):
     user_text = event.message.text
     app.logger.info("Received text message event.")
 
-    # 取得 AI 智慧回覆
-    ai_reply = get_ai_response(user_text)
+    prompt, direct_reply = prepare_message(user_text)
+    ai_reply = direct_reply if direct_reply is not None else get_ai_response(prompt)
     try:
         with ApiClient(configuration) as api_client:
             line_bot_api = MessagingApi(api_client)

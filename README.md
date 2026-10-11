@@ -55,3 +55,13 @@ ngrok http 5000
 取得提供的 HTTPS 網址（例如 `https://xxxx.ngrok-free.app`），將 Webhook URL 設為：
 `https://xxxx.ngrok-free.app/callback`
 至 LINE Developers Console 進行 Verify 並開啟 Webhook！
+
+## LINE 快速指令
+
+- `翻 <文字>`：翻譯成繁體中文；可用 `翻英文 <文字>` 指定翻成英文。
+- `改 <文字>`：修正文法並讓表達更自然。
+- `解 <主題>`：白話解釋並附上例子。
+- `考 <主題>`：出一道小測驗，等你回答後再公布解釋。
+- `/help`：查看指令清單。
+
+其他訊息仍會交給 AI 一般聊天。
