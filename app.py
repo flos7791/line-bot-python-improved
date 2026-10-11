@@ -138,6 +138,10 @@ def prepare_message(user_text: str) -> tuple[str, str | None]:
         "考": "quiz", "出題": "quiz", "小測驗": "quiz",
     }
     action = commands.get(command)
+    target_languages = {"翻英文": "英文", "翻日文": "日文", "翻韓文": "韓文"}
+    if command in target_languages:
+        action = "translate"
+        argument = f"{target_languages[command]} {argument}".strip()
     if not action:
         return user_text, None
     if not argument:
