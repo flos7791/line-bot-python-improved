@@ -143,7 +143,13 @@ COMMAND_HELP = (
 def prepare_message(user_text: str) -> tuple[str, str | None, bool]:
     """Return the Gemini prompt, optional direct reply, and search preference."""
     text = user_text.strip()
-    if text.lower() in {"/help", "help", "幫助", "指令", "功能"}:
+    normalized_text = text.strip("\"'`“”‘’ ").lower()
+    help_phrases = {
+        "/help", "help", "指令", "幫助", "功能", "可用指令", "有哪些指令",
+        "我可以用哪些指令", "你有哪些功能", "你能做什麼", "功能列表",
+        "commands", "command list", "what can you do", "what commands can i use",
+    }
+    if normalized_text in help_phrases:
         return "", COMMAND_HELP, False
 
     parts = text.split(maxsplit=1)
@@ -196,6 +202,7 @@ def callback():
     # Do not log webhook payloads; they contain users' private messages.
 
     try:
+        app.logger.info("Received valid LINE webhook.")
         handler.handle(body, signature)
     except InvalidSignatureError:
         app.logger.error("無效的簽章，請檢查 Channel Secret 是否正確。")
@@ -220,6 +227,7 @@ def handle_message(event):
                     messages=[TextMessage(text=ai_reply[:5000])]
                 )
             )
+        app.logger.info("LINE reply sent successfully.")
     except Exception as e:
         app.logger.error("Failed to send LINE reply (%s).", type(e).__name__)
 
